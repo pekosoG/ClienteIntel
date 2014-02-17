@@ -64,6 +64,7 @@ public class HostGUI extends JFrame {
 	protected ObjectOutputStream elOutput=null;
 	protected ObjectInputStream elInput=null;
 	protected HashMap<String,Guest>elCatalogo=null;
+	protected Object[][] dataTable;
 	private String id="";
 	
 	/**
@@ -90,6 +91,7 @@ public class HostGUI extends JFrame {
 	 * Create the frame.
 	 */
 	public HostGUI() {
+		this.elCatalogo= new HashMap<String,Guest>();
 		cargaConfig();
 		teConectas();
 		setModalExclusionType(ModalExclusionType.APPLICATION_EXCLUDE);
@@ -119,28 +121,22 @@ public class HostGUI extends JFrame {
 		
 		table = new JTable();
 		table.setModel(new DefaultTableModel(
-			new Object[][] { //Contenido de prueba...
-				{true, "01", "CentOS"},
-				{false, "02", "SlackWare"},
-				{true, "03", "Debian"},
-				{true, "04", "Red-Hat"},
-				{false, "05", "Fedora"},
-			},
-			new String[] { //Headers Sugeridos
-				"Select", "Host ID", "OS"
-			}
-		) {
+				dataTable,
+				new String[] {"Select", "Host ID", "OS"}){//Headers Sugeridos
 			Class[] columnTypes = new Class[] {
-				Boolean.class, String.class, String.class
+					Boolean.class, String.class, String.class
 			};
 			public Class getColumnClass(int columnIndex) {
 				return columnTypes[columnIndex];
 			}
 			boolean[] columnEditables = new boolean[] {
-				true, false, false
+					true, false, false
 			};
 			public boolean isCellEditable(int row, int column) {
 				return columnEditables[column];
+			}
+			public void insertValue(Object[] ob,int col){
+
 			}
 		});
 		table.setFillsViewportHeight(true);
@@ -150,6 +146,8 @@ public class HostGUI extends JFrame {
 		JScrollPane scrollPane = new JScrollPane(table);
 		scrollPane.setToolTipText("El contenido de est\u00E1 tabla ser\u00E1 Dinamico (Seg\u00FAn los Host Disponibles)");
 		scrollPane.setBounds(12, 131, 388, 100);
+		if(this.elCatalogo.size()<=0)
+			scrollPane.setEnabled(false);
 		panel.add(scrollPane);
 		
 		JLabel lblGuestDisponibles = new JLabel("Guest Disponibles:");
@@ -255,7 +253,9 @@ public class HostGUI extends JFrame {
 		
 		elBurnin= new frmBurnin();
 		elBurnin.setVisible(false);
-		//this.add(elBurnin);
+		
+		if(this.elSocket!=null)
+			this.btnConectarse.setEnabled(false);
 	}
 
 	/**
@@ -273,6 +273,7 @@ public class HostGUI extends JFrame {
 			System.out.println("Error al conectarse con el Host "+this.IP_Server+"\n"+e);
 		} catch (IOException e) {
 			System.out.println("Erro de IO \n"+e);
+			System.exit(666);
 		}
 	}
 	
@@ -295,7 +296,6 @@ public class HostGUI extends JFrame {
 				if(entrada.equalsIgnoreCase("GetBasicInfo")){
 					salida=this.getBasicInfo();
 					elOutput.writeObject(salida);
-					
 					solicitaListado();
 				}
 			}
@@ -311,12 +311,37 @@ public class HostGUI extends JFrame {
 	private void solicitaListado() {
 		String salida="INFO-REQ=Guests";
 		String entrada="";
-		
+
 		try {
 			elOutput.writeObject(salida);
-			
-			//{ID=[ID],IP=[IP],OS=[OS],CORES=[CORES],MEM=[MEM]};*
 			entrada=(String)elInput.readObject();
+
+			System.out.println("Listado de Guest: "+entrada);
+			if(!entrada.equalsIgnoreCase("VACIA")){
+				String[] aux=entrada.split(";");
+				dataTable= new Object[aux.length][3];
+				for(int i=0;i<aux.length;i++){
+					String guest=aux[i];
+
+					guest=guest.substring(1, guest.length()-1);
+					System.out.println("Ya sin llaves "+guest);
+					String[] splitAux=guest.split(",");
+
+					//{ID=[ID],IP=[IP],OS=[OS],CORES=[CORES],MEM=[MEM]};*
+					//(String ID,String IP,String OS,String cores,String mem
+					Guest auxG= new Guest(splitAux[0].substring(splitAux[0].indexOf('=')+1),
+							splitAux[1].substring(splitAux[1].indexOf('=')+1),
+							splitAux[2].substring(splitAux[2].indexOf('=')+1),
+							splitAux[3].substring(splitAux[3].indexOf('=')+1),
+							splitAux[4].substring(splitAux[4].indexOf('=')+1));
+					this.elCatalogo.put(auxG.getID(), auxG);
+
+					dataTable[i][0]=true;
+					dataTable[i][1]=auxG.getID();
+					dataTable[i][2]=auxG.getOS();
+				}
+			}else
+				dataTable= new Object[0][3];
 			
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
@@ -347,30 +372,40 @@ public class HostGUI extends JFrame {
 	 */
 	private void cargaConfig() {
 		try{
+			System.out.println("Leyendo el XML");
 			File elXML = new File("CloudIntel_config.xml");
 			
-			DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
-			DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
-			Document doc = dBuilder.parse(elXML);
-			
-			doc.getDocumentElement().normalize();
-			
-			NodeList nList = doc.getElementsByTagName("param");
-			
-			for (int temp = 0; temp < nList.getLength(); temp++) {
+			if(elXML.exists()){
+
+				DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+				DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+				Document doc = dBuilder.parse(elXML);
+
+				doc.getDocumentElement().normalize();
 				
-				Node nNode = nList.item(temp); 
-				System.out.println("\nCurrent Element :" + nNode.getNodeName());
-		 
-				if (nNode.getNodeType() == Node.ELEMENT_NODE) {
-					Element eElement = (Element) nNode;
-					this.IP_Server=eElement.getElementsByTagName("HOST_IP").item(0).getTextContent();
-					this.PUERTO_DEFAULT=Integer.valueOf(eElement.getElementsByTagName("HOST_IP").item(0).getTextContent());
+				System.out.println("Root element :" + doc.getDocumentElement().getNodeName());
+				NodeList nList = doc.getElementsByTagName("param");
+
+				for (int temp = 0; temp < nList.getLength(); temp++) {
+
+					Node nNode = nList.item(temp); 
+					
+					System.out.println("\nCurrent Element :" + nNode.getNodeName());
+					if (nNode.getNodeType() == Node.ELEMENT_NODE) {
+						Element eElement = (Element) nNode;
+						System.out.println("ee: "+eElement.getTagName()+" ii: "+eElement.hasAttributes());
+						if(eElement.getAttribute("nombre").equalsIgnoreCase("HOST_IP"))
+							this.IP_Server=eElement.getAttribute("value");
+						if(eElement.getAttribute("nombre").equalsIgnoreCase("PUERTO"))
+							this.PUERTO_DEFAULT=Integer.valueOf(eElement.getAttribute("value"));
+					}
 				}
-			}
+			}else
+				System.out.println("No existe el archivo");
 		}catch(Exception e){
 			System.out.println("Error al leer el XML de configuracion "+e);
 		}
+		System.out.println("Server:"+IP_Server+":"+this.PUERTO_DEFAULT);
 	}
 }
 

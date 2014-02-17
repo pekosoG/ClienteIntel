@@ -1,4 +1,4 @@
 <config>
-	<HOST_IP>127.0.0.1</HOST_IP>
-	<PUERTO>5000</PUERTO>
+	<param nombre="HOST_IP" value="127.0.0.1" />
+	<param nombre="PUERTO" value="5000" />
 </config>
